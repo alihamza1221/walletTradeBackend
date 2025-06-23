@@ -112,6 +112,119 @@ app.post("/quote", async (req, res) => {
   }
 });
 
+const tokens = [
+  {
+    chainId: 56,
+    decimals: 18,
+    symbol: "CAKE",
+    name: "PancakeSwap Token",
+    isNative: false,
+    isToken: true,
+    address: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+    logoURI: "https://s2.coinmarketcap.com/static/img/coins/200x200/7186.png",
+  },
+  {
+    chainId: 56,
+    decimals: 18,
+    symbol: "BNB",
+    name: "Binance Chain Native Token",
+    isNative: true,
+    isToken: false,
+    logoURI:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQP9cUvoCvmCXO4pNHvnREHBCKW30U-BVxKfg&s",
+  },
+];
+app.get("/dexTokens", async (req, res) => {
+  try {
+    // Return the list of tokens
+    return res.status(200).json({
+      message: "Tokens fetched successfully",
+      tokens: tokens,
+    });
+  } catch (error) {
+    console.error("Error fetching tokens:", error);
+    return res.status(500).json({
+      message: "Error fetching tokens",
+      error: error.message,
+    });
+  }
+});
+
+app.post("/dexTokens", async (req, res) => {
+  try {
+    //destructuring could give error if not present
+    const { chainId, decimals, symbol, name } = req.body;
+
+    const isNative = req.body?.isNative || false;
+    const address = req.body?.address || "";
+    const logoURI = req.body?.logoURI || "";
+    if (!chainId || !decimals || !symbol || !name || (!isNative && !address)) {
+      return res.status(400).json({
+        message: "Missing required fields",
+      });
+    }
+
+    // Check if the token already exists
+    const existingToken = tokens.find((token) => token.symbol === symbol);
+    if (existingToken) {
+      return res.status(400).json({
+        message: "Token with this symbol already exists",
+      });
+    }
+
+    // Create the new token object
+    const newToken = {
+      chainId: parseInt(chainId),
+      decimals: parseInt(decimals),
+      symbol,
+      name,
+    };
+    if (isNative) {
+      newToken.isNative = true;
+      newToken.isToken = false;
+    } else {
+      newToken.isNative = false;
+      newToken.isToken = true;
+      newToken.address = address;
+    }
+    if (logoURI) {
+      newToken.logoURI = logoURI;
+    }
+    // Add the new token to the list
+    tokens.push(newToken);
+    return res.status(201).json({
+      message: "Token added successfully",
+      tokens: tokens,
+    });
+  } catch (error) {
+    console.error("Error adding token:", error);
+    return res.status(500).json({
+      message: "Error adding token",
+      error: error.message,
+    });
+  }
+});
+app.delete("/dexTokens", async (req, res) => {
+  try {
+    const { symbol } = req.body;
+    if (!symbol) {
+      return res.status(400).json({
+        message: "Missing required field: symbol",
+      });
+    }
+    const tokenIndex = tokens.findIndex((token) => token.symbol === symbol);
+    if (tokenIndex === -1) {
+      return res.status(404).json({
+        message: "Token not found",
+      });
+    }
+    tokens.splice(tokenIndex, 1);
+    return res.status(200).json({
+      message: "Token deleted successfully",
+      tokens: tokens,
+    });
+  } catch (e) {}
+});
 app.listen(3001, () => {
   console.log("Server is running on port 3001");
 });
