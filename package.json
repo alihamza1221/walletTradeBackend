@@ -1,0 +1,24 @@
+{
+  "name": "wallettrade_backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@pancakeswap/sdk": "^5.8.14",
+    "@pancakeswap/smart-router": "^5.1.8",
+    "@pancakeswap/tokens": "^0.7.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "graphql-request": "^5.0.0",
+    "viem": "^1.21.4"
+  }
+}
