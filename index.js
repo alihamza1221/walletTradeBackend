@@ -1,12 +1,11 @@
 import { createPublicClient, http, hexToBigInt, parseUnits } from "viem";
 
 import { bsc } from "viem/chains";
-import { bscTokens } from "@pancakeswap/tokens";
 import { GraphQLClient } from "graphql-request";
 import {
-  SmartRouter,
   SMART_ROUTER_ADDRESSES,
   SwapRouter,
+  SmartRouter,
 } from "@pancakeswap/smart-router";
 import { ERC20Token } from "@pancakeswap/sdk";
 import { Native, CurrencyAmount, TradeType, Percent } from "@pancakeswap/sdk";
@@ -14,7 +13,10 @@ import { ChainId } from "@pancakeswap/chains";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import db, { client } from "./utils/db.js";
+
 dotenv.config();
+
 BigInt.prototype.toJSON = function () {
   return this.toString();
 };
@@ -96,8 +98,6 @@ app.post("/quote", async (req, res) => {
       });
     }
 
-    swapFrom = convertToERC20Token(swapFrom);
-    swapTo = convertToERC20Token(swapTo);
     const quote = await getQuoteForSwap(swapFrom, swapTo, userAmount);
     return res.status(200).json({
       message: "Quote fetched successfully",
@@ -112,31 +112,15 @@ app.post("/quote", async (req, res) => {
   }
 });
 
-const tokens = [
-  {
-    chainId: 56,
-    decimals: 18,
-    symbol: "CAKE",
-    name: "PancakeSwap Token",
-    isNative: false,
-    isToken: true,
-    address: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
-    logoURI: "https://s2.coinmarketcap.com/static/img/coins/200x200/7186.png",
-  },
-  {
-    chainId: 56,
-    decimals: 18,
-    symbol: "BNB",
-    name: "Binance Chain Native Token",
-    isNative: true,
-    isToken: false,
-    logoURI:
-      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQP9cUvoCvmCXO4pNHvnREHBCKW30U-BVxKfg&s",
-  },
-];
 app.get("/dexTokens", async (req, res) => {
   try {
     // Return the list of tokens
+    db();
+    const tokens = await client
+      .db("tradewallet")
+      .collection("tokens")
+      .find({})
+      .toArray();
     return res.status(200).json({
       message: "Tokens fetched successfully",
       tokens: tokens,
@@ -165,7 +149,11 @@ app.post("/dexTokens", async (req, res) => {
     }
 
     // Check if the token already exists
-    const existingToken = tokens.find((token) => token.symbol === symbol);
+    db();
+    const collection = client.db("tradewallet").collection("tokens");
+    const existingToken = await collection.findOne({
+      symbol: symbol,
+    });
     if (existingToken) {
       return res.status(400).json({
         message: "Token with this symbol already exists",
@@ -191,10 +179,20 @@ app.post("/dexTokens", async (req, res) => {
       newToken.logoURI = logoURI;
     }
     // Add the new token to the list
-    tokens.push(newToken);
+
+    //getQuoteForSwap
+    const quote = await getQuoteForSwap(newToken, newToken, "1");
+    newToken.usdtPrice = quote.toExact();
+    const result = await collection.insertOne(newToken);
+    if (!result.acknowledged) {
+      return res.status(500).json({
+        message: "Error adding token to the database",
+      });
+    }
+
     return res.status(201).json({
       message: "Token added successfully",
-      tokens: tokens,
+      _id: result.insertedId,
     });
   } catch (error) {
     console.error("Error adding token:", error);
@@ -212,19 +210,66 @@ app.delete("/dexTokens", async (req, res) => {
         message: "Missing required field: symbol",
       });
     }
-    const tokenIndex = tokens.findIndex((token) => token.symbol === symbol);
-    if (tokenIndex === -1) {
+    db();
+    const collection = client.db("tradewallet").collection("tokens");
+
+    const res = await collection.deleteOne({ symbol: symbol });
+    if (!res.acknowledged) {
       return res.status(404).json({
         message: "Token not found",
       });
     }
-    tokens.splice(tokenIndex, 1);
     return res.status(200).json({
       message: "Token deleted successfully",
-      tokens: tokens,
+      count: res.deletedCount,
     });
-  } catch (e) {}
+  } catch (e) {
+    console.error("Error deleting token:", e);
+    return res.status(500).json({
+      message: "Error deleting token",
+      error: e.message,
+    });
+  }
 });
+
+app.patch("/dexTokens/:symbol", async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const updateData = req.body;
+
+    if (!symbol || Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        message: "Missing required fields",
+      });
+    }
+
+    db();
+    const collection = client.db("tradewallet").collection("tokens");
+
+    const result = await collection.updateOne(
+      { symbol: symbol },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        message: "Token not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Token updated successfully",
+      count: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Error updating token:", error);
+    return res.status(500).json({
+      message: "Error updating token",
+      error: error.message,
+    });
+  }
+});
+
 app.listen(3001, () => {
   console.log("Server is running on port 3001");
 });
@@ -277,9 +322,7 @@ async function createSwapTx(swapFrom, swapTo, userAmount, address) {
     value: hexToBigInt(value).toString(),
   };
 
-  console.log("Transaction details:", tx);
   const gasEstimate = (await publicClient.estimateGas(tx)).toString();
-  console.log("Estimated gas:", gasEstimate);
 
   tx.gas = gasEstimate;
   return tx;
@@ -311,8 +354,11 @@ async function getPancakeSwapTokens() {
   }
 }
 
-async function getQuoteForSwap(swapFrom, swapTo, userAmount) {
+async function getQuoteForSwap(swapFromData, swapToData, userAmount) {
   try {
+    const swapFrom = convertToERC20Token(swapFromData);
+    const swapTo = convertToERC20Token(swapToData);
+
     const [v2Pools, v3Pools] = await Promise.all([
       SmartRouter.getV2CandidatePools({
         onChainProvider: () => publicClient,
