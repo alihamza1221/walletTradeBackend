@@ -137,12 +137,19 @@ app.get("/dexTokens", async (req, res) => {
 app.post("/dexTokens", async (req, res) => {
   try {
     //destructuring could give error if not present
-    const { chainId, decimals, symbol, name } = req.body;
+    const { chainId, decimals, symbol, name, usdtPrice } = req.body;
 
     const isNative = req.body?.isNative || false;
     const address = req.body?.address || "";
     const logoURI = req.body?.logoURI || "";
-    if (!chainId || !decimals || !symbol || !name || (!isNative && !address)) {
+    if (
+      !chainId ||
+      !decimals ||
+      !symbol ||
+      !name ||
+      !usdtPrice ||
+      (!isNative && !address)
+    ) {
       return res.status(400).json({
         message: "Missing required fields",
       });
@@ -166,6 +173,7 @@ app.post("/dexTokens", async (req, res) => {
       decimals: parseInt(decimals),
       symbol,
       name,
+      usdtPrice: usdtPrice,
     };
     if (isNative) {
       newToken.isNative = true;
@@ -181,8 +189,8 @@ app.post("/dexTokens", async (req, res) => {
     // Add the new token to the list
 
     //getQuoteForSwap
-    const quote = await getQuoteForSwap(newToken, newToken, "1");
-    newToken.usdtPrice = quote.toExact();
+    // const quote = await getQuoteForSwap(newToken, newToken, "1");
+    // newToken.usdtPrice = quote.toExact();
     const result = await collection.insertOne(newToken);
     if (!result.acknowledged) {
       return res.status(500).json({
