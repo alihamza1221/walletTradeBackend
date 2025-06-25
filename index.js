@@ -322,9 +322,9 @@ async function createSwapTx(swapFrom, swapTo, userAmount, address) {
     value: hexToBigInt(value).toString(),
   };
 
-  const gasEstimate = (await publicClient.estimateGas(tx)).toString();
+  //const gasEstimate = (await publicClient.estimateGas(tx)).toString();
 
-  tx.gas = gasEstimate;
+  //tx.gas = gasEstimate;
   return tx;
 }
 
